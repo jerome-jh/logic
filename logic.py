@@ -2,7 +2,7 @@ from copy import *
 
 """ Requires Python >= 3.5, syntax error otherwise """
 
-__all__ = ['AND', 'OR', 'IMP', 'EQ', 'NOT', 'CNF', 'math_str', 'code_str', 'wolf_str', 'dimacs_str', 'is_cnf', 'count_variable', 'to_sat']
+__all__ = ['AND', 'OR', 'IMP', 'EQ', 'NOT', 'CNF', 'math_str', 'code_str', 'wolf_str', 'dimacs_str', 'is_cnf', 'count_variable', 'to_sat', 'simplify']
 
 ## TODO: check input for AND, OR, etc ... must be non zero integers
 
@@ -373,4 +373,66 @@ def is_cnf(exp):
         return True
     else:
         return False
+
+def simplify(exp):
+    if islist(exp):
+        car,cdr = lisp(exp)
+        if car.func == AND:
+            ## Simplify a /\ a
+            ## Simplify -a /\ -a
+            lit = set()
+            out = [AND_op]
+            for e in cdr:
+                if islist(e):
+                    out.append(simplify(e))
+                else:
+                    if e in lit:
+                        ## skip
+                        pass
+                    else:
+                        lit.add(e)
+                        out.append(e)
+            if len(out) == 2:
+                return out[1]
+            else:
+                return out
+        elif car.func == OR:
+            ## Simplify a \/ -a
+            lit_p = set()
+            lit_n = set()
+            for e in cdr:
+                if not islist(e):
+                    if e > 0:
+                        lit_p.add(e)
+                    else:
+                        lit_n.add(-e)
+            lit = set()
+            ## Compute intersection
+            for e in lit_p:
+                if e in lit_n:
+                    lit.add(e)
+            #print(lit)
+            if len(lit):
+                ## Build new expression
+                out = [OR_op]
+                for e in cdr:
+                    if islist(e):
+                        out.append(simplify(e))
+                    else:
+                        if (e > 0 and e in lit) or (e < 0 and -e in lit):
+                            ## skip
+                            pass
+                        else:
+                            out.append(e)
+                #TODO: treat out empty
+                return out
+            else:
+                ## Process subexp
+                for i in range(1,len(exp)):
+                    if islist(exp[i]):
+                        exp[i] = simplify(exp[i])
+                return exp
+    else:
+        ## Can only occur at root of the tree
+        return exp
 
