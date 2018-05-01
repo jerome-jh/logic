@@ -41,7 +41,10 @@ def CNF(exp):
         #print('out:', code_str(exp))
     return exp
 
-class AND_op:
+class OP:
+    pass
+
+class AND_op(OP):
     arity = -2
     symb = '/\\'
     wolf_symb = 'And'
@@ -49,7 +52,7 @@ class AND_op:
     def assoc(e, *arg):
         e.extend(arg)
 
-class OR_op:
+class OR_op(OP):
     arity = -2
     symb = '\\/'
     wolf_symb = 'Or'
@@ -57,19 +60,19 @@ class OR_op:
     def assoc(self, *args):
         self.arg.extend(args)
 
-class IMP_op:
+class IMP_op(OP):
     arity = 2
     symb = '->'
     wolf_symb = 'Implies'
     func = IMP
 
-class EQ_op:
+class EQ_op(OP):
     arity = 2
     symb = '='
     wolf_symb = 'Equivalent'
     func = EQ
 
-class NOT_op:
+class NOT_op(OP):
     arity = 1
     symb = '-'
     wolf_symb = 'Not'
@@ -211,7 +214,8 @@ def to_sat(exp):
         return [[exp]]
 
 def islist(exp):
-    return type(exp) != type(int())
+    ## Numpy integers have __getitem__, so better check on __iter__
+    return '__iter__' in dir(exp) and issubclass(exp[0], OP)
 
 def lisp(exp):
     """ This is suboptimal because Python does not support views on lists,
