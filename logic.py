@@ -8,12 +8,22 @@ __all__ = ['AND', 'OR', 'IMP', 'EQ', 'NOT', 'CNF', 'math_str', 'code_str', 'wolf
 ## TODO: check input for AND, OR, etc ... must be non zero integers
 
 def AND(*arg):
-    assert(len(arg) >= -AND_op.arity)
-    return list(chain([AND_op], list(arg)))
+    return ANDl(arg)
+
+def ANDl(a):
+    """ a is an iterable """
+    a = list(a)
+    assert(len(a) >= -AND_op.arity)
+    return list(chain([AND_op], a))
 
 def OR(*arg):
-    assert(len(arg) >= -OR_op.arity)
-    return list(chain([OR_op], list(arg)))
+    return ORl(arg)
+
+def ORl(a):
+    """ a is an iterable """
+    a = list(a)
+    assert(len(a) >= -OR_op.arity)
+    return list(chain([OR_op], a))
 
 def IMP(a, b):
     return [IMP_op, a, b]
@@ -268,9 +278,9 @@ def convert_not(exp):
                 ## Simplify NOT NOT
                 return arg2[0]
             elif op2.func == AND:
-                return OR(*map(convert_not, list(map(NOT, arg2))))
+                return ORl(map(convert_not, list(map(NOT, arg2))))
             elif op2.func == OR:
-                return AND(*map(convert_not, list(map(NOT, arg2))))
+                return ANDl(map(convert_not, list(map(NOT, arg2))))
             else:
                 raise Exception("Operator '%s' should have been simplified by now"%op2.symb)
         else:
@@ -297,21 +307,21 @@ def distribute_or(exp):
                         of = lambda x: OR(x,o)
                         oi = arg[2:]
                         if not len(oi):
-                            return AND(*map(distribute_or, list(map(of, ai))))
+                            return ANDl(map(distribute_or, list(map(of, ai))))
                         else:
-                            reta = AND(*map(of, ai))
+                            reta = ANDl(map(of, ai))
                             reto = OR(reta, *oi)
                             return distribute_or(reto)
                     else:
                         ## distribute to the right
                         o = arg[0:i]
                         ai = arg2
-                        of = lambda x: OR(*list(chain(o,[x])))
+                        of = lambda x: ORl(list(chain(o,[x])))
                         oi = arg[i+1:]
                         if not len(oi):
-                            return AND(*map(distribute_or, list(map(of, ai))))
+                            return ANDl(map(distribute_or, list(map(of, ai))))
                         else:
-                            reta = AND(*map(of, ai))
+                            reta = ANDl(map(of, ai))
                             reto = OR(reta, *oi)
                             return distribute_or(reto)
         return exp
@@ -329,7 +339,7 @@ def associate_or(exp):
             if islist(e):
                 car, cdr2 = lisp(e)
                 if car.func == OR:
-                    return associate_or(OR(*list(chain(cdr[0:i], cdr2, cdr[i+1:]))))
+                    return associate_or(ORl(list(chain(cdr[0:i], cdr2, cdr[i+1:]))))
                 else:
                     exp[i+1] = associate_or(e)
         return exp
@@ -347,7 +357,7 @@ def associate_and(exp):
             if islist(e):
                 car, cdr2 = lisp(e)
                 if car.func == AND:
-                    return associate_and(AND(*list(chain(cdr[0:i], cdr2, cdr[i+1:]))))
+                    return associate_and(ANDl(list(chain(cdr[0:i], cdr2, cdr[i+1:]))))
                 else:
                     exp[i+1] = associate_and(e)
         return exp
