@@ -233,22 +233,29 @@ def lisp(exp):
         so taking a slice actually creates a copy """
     return exp[0], exp[1:]
 
-def convert_eq(exp):
-    """ exp must be a list """
-    op, arg = lisp(exp)
+def convert_eq_node(exp):
+    op = exp[0]
     if op.func == EQ:
-        a = arg[0]
-        b = arg[1]
-        if islist(a):
-            a = convert_eq(a)
-        if islist(b):
-            b = convert_eq(b)
+        assert(len(exp) == EQ_op.arity + 1)
+        a = exp[1]
+        b = exp[2]
         return AND(IMP(a, b), IMP(copy(b), copy(a)))
     else:
-        for i, a in enumerate(arg):
-            if islist(a):
-                exp[i+1] = convert_eq(a)
         return exp
+
+def dfs_lh(exp, node_cbk):
+    """ exp must be a list of list
+        This is a depth first search, left handed wander in the tree
+    """
+    op, arg = lisp(exp)
+    for i, a in enumerate(arg):
+        if islist(a):
+            exp[i+1] = dfs_lh(a, node_cbk)
+    return node_cbk(exp)
+
+def convert_eq(exp):
+    """ exp must be a list """
+    return dfs_lh(exp, convert_eq_node)
 
 def convert_imp(exp):
     """ exp must be a list """
