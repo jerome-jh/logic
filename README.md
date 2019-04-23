@@ -12,7 +12,7 @@ Still equations are fairly easy to enter and read in code and they can be output
 
 They can also be converted into a "list of list" suitable for calling a SAT solver, such as Pycosat.
 
-Python >= 3.5 is required.
+Requires Python 3.
 
 # API
 
