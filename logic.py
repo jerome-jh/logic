@@ -258,6 +258,22 @@ def visit_lrn(exp, op_func, node_cbk):
     else:
         return list(chain([op], arg))
 
+def visit_nlr(exp, op_func, node_cbk):
+    """ exp must be a list of list
+        Visit the tree depth first, pre-order (NLR)
+    """
+    print("visit_nlr", exp)
+    op, arg = lisp(exp)
+    if op.func == op_func:
+        assert_arity(op, arg)
+        exp = node_cbk(arg)
+        print("visit_nlr node_cbk", exp)
+    op, arg = lisp(exp)
+    for i, a in enumerate(arg):
+        if islist(a):
+            arg[i] = visit_nlr(a, op_func, node_cbk)
+    return list(chain([op], arg))
+
 def convert_eq(exp):
     """ exp must be a list of list """
     return visit_lrn(exp, EQ, convert_eq_node)
@@ -353,23 +369,26 @@ def associate_or(exp):
                 exp[i+1] = associate_or(e)
         return exp
 
+## must check this vs parent instead of this vs child
+## or not possible to fully associate in a single pass
+def associate_and_cbk(arg):
+    print("associate_and_cbk", arg)
+    arg_out = list()
+    for e in arg:
+        if islist(e):
+            op, arg2 = lisp(e)
+            if op.func == AND:
+                arg_out.extend(arg2)
+            else:
+                arg_out.append(e)
+        else:
+            arg_out.append(e)
+    return list(chain([AND_op], arg_out))
+
 def associate_and(exp):
-    """ exp must be a list """
-    car, cdr = lisp(exp)
-    if car.func == AND:
-        for i, e in enumerate(cdr):
-            if islist(e):
-                car, cdr2 = lisp(e)
-                if car.func == AND:
-                    return associate_and(ANDl(list(chain(cdr[0:i], cdr2, cdr[i+1:]))))
-                else:
-                    exp[i+1] = associate_and(e)
-        return exp
-    else:
-        for i, e in enumerate(cdr):
-            if islist(e):
-                exp[i+1] = associate_and(e)
-        return exp
+    """ exp must be a list of list """
+    print("associate_and", exp)
+    return visit_nlr(exp, AND, associate_and_cbk)
 
 def is_cnf(exp):
     if not islist(exp):

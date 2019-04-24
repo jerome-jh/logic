@@ -96,6 +96,26 @@ class TestCNF(unittest.TestCase):
         self.assertTrue(CNF(s) == c)
         self.assertTrue(is_cnf(c))
 
+        s = AND(1,AND(2,3),AND(4,5))
+        c = AND(1,2,3,4,5)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
+
+        s = AND(AND(1,2),3,AND(4,5))
+        c = AND(1,2,3,4,5)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
+
+        s = AND(AND(AND(1,2),3),4)
+        c = AND(1,2,3,4)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
+
+        s = AND(1,AND(2,AND(3,4)))
+        c = AND(1,2,3,4)
+        self.assertTrue(CNF(s) == c)
+        self.assertTrue(is_cnf(c))
+
         s = OR(1,OR(2,3))
         c = OR(1,2,3)
         self.assertTrue(CNF(s) == c)
