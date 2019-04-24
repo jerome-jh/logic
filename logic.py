@@ -233,46 +233,43 @@ def lisp(exp):
         so taking a slice actually creates a copy """
     return exp[0], exp[1:]
 
-def convert_eq_node(exp):
-    op = exp[0]
-    if op.func == EQ:
-        assert(len(exp) == EQ_op.arity + 1)
-        a = exp[1]
-        b = exp[2]
-        return AND(IMP(a, b), IMP(copy(b), copy(a)))
+def assert_arity(op, arg):
+    if op.arity < 0:
+        assert(len(arg) >= -op.arity)
     else:
-        return exp
+        assert(len(arg) == op.arity)
 
-def dfs_lh(exp, node_cbk):
+def convert_eq_node(arg):
+    a = arg[0]
+    b = arg[1]
+    return AND(IMP(a, b), IMP(copy(b), copy(a)))
+
+def visit_lrn(exp, op_func, node_cbk):
     """ exp must be a list of list
-        This is a depth first search, left handed wander in the tree
+        Visit the tree depth first, post-order (LRN)
     """
     op, arg = lisp(exp)
     for i, a in enumerate(arg):
         if islist(a):
-            exp[i+1] = dfs_lh(a, node_cbk)
-    return node_cbk(exp)
+            arg[i] = visit_lrn(a, op_func, node_cbk)
+    if op.func == op_func:
+        assert_arity(op, arg)
+        return node_cbk(arg)
+    else:
+        return list(chain([op], arg))
 
 def convert_eq(exp):
-    """ exp must be a list """
-    return dfs_lh(exp, convert_eq_node)
+    """ exp must be a list of list """
+    return visit_lrn(exp, EQ, convert_eq_node)
+
+def convert_imp_node(arg):
+    a = arg[0]
+    b = arg[1]
+    return OR(NOT(a), b)
 
 def convert_imp(exp):
-    """ exp must be a list """
-    op, arg = lisp(exp)
-    if op.func == IMP:
-        a = arg[0]
-        b = arg[1]
-        if islist(a):
-            a = convert_imp(a)
-        if islist(b):
-            b = convert_imp(b)
-        return OR(NOT(a), b)
-    else:
-        for i, a in enumerate(arg):
-            if islist(a):
-                exp[i+1] = convert_imp(a)
-        return exp
+    """ exp must be a list of list """
+    return visit_lrn(exp, IMP, convert_imp_node)
 
 def convert_not(exp):
     """ exp must be a list """
