@@ -13,7 +13,7 @@ def AND(*arg):
 def ANDl(a):
     """ a is an iterable """
     a = list(a)
-    assert(len(a) >= -AND_op.arity)
+    assert_arity(AND_op, a)
     return list(chain([AND_op], a))
 
 def OR(*arg):
@@ -22,7 +22,7 @@ def OR(*arg):
 def ORl(a):
     """ a is an iterable """
     a = list(a)
-    assert(len(a) >= -OR_op.arity)
+    assert_arity(OR_op, a)
     return list(chain([OR_op], a))
 
 def IMP(a, b):
@@ -44,9 +44,7 @@ def CNF(exp):
         return exp
     while not is_cnf(exp):
         #print('in:', code_str(exp))
-        exp = associate_or(exp)
-        #print(code_str(exp))
-        exp = associate_and(exp)
+        exp = associate(exp)
         #print(code_str(exp))
         exp = distribute_or(exp)
         #print('out:', code_str(exp))
@@ -239,57 +237,95 @@ def assert_arity(op, arg):
     else:
         assert(len(arg) == op.arity)
 
-def convert_eq_node(arg):
-    a = arg[0]
-    b = arg[1]
-    return AND(IMP(a, b), IMP(copy(b), copy(a)))
+def convert_eq_node(op, arg):
+    if op.func == EQ:
+        a = arg[0]
+        b = arg[1]
+        return AND_op, [IMP(a, b), IMP(copy(b), copy(a))]
+    return op, arg
 
-def convert_imp_node(arg):
-    a = arg[0]
-    b = arg[1]
-    return OR(NOT(a), b)
+def convert_imp_node(op, arg):
+    if op.func == IMP:
+        a = arg[0]
+        b = arg[1]
+        return OR_op, [NOT(a), b]
+    return op, arg
 
-def visit_lrn_f(op_func, node_cbk):
+def visit_lrn_f(node_cbk):
     def visit_lrn_r(exp):
         """ exp must be a list of list
             Visit the tree depth first, post-order (LRN)
         """
         if not islist(exp):
+            ## reached a leaf of tree
             return exp
         op, arg = lisp(exp)
-        arg_out = list(map(visit_lrn_r, arg))
-        if op.func == op_func:
-            assert_arity(op, arg_out)
-            return node_cbk(arg_out)
-        else:
-            return list(chain([op], arg_out))
+        arg_int = list(map(visit_lrn_r, arg))
+        op_out, arg_out = node_cbk(op, arg_int)
+        ## TODO: op_out.func does a number of checks we may want to avoid
+        return op_out.func(*arg_out)
     return visit_lrn_r
 
-def visit_lrn(exp, op_func, node_cbk):
+def visit_lrn(exp, node_cbk):
     """ exp must be a list of list
         Visit the tree depth first, post-order (LRN)
         The node_cbk function takes a list of arguments as argument
         and returns a complete expression, so the parent node of a
-        transformed node does not see its number of arguments changing
+        transformed node does not see its number of arguments changing.
     """
-    return visit_lrn_f(op_func, node_cbk)(exp)
+    return visit_lrn_f(node_cbk)(exp)
 
-def visit_lrn_p(exp, op_parent, op_func):
+def associate_cbk_f(op_func_list):
+    def associate_cbk(parent_op, current_op, arg):
+        if parent_op.func in op_func_list and parent_op.func == current_op.func:
+            ## Merge parent_op arguments with current_op ones
+            return arg
+        else:
+            ## No changes, just copy exp
+            return [current_op.func(*arg)]
+    return associate_cbk
+
+def visit_lrn_p_f(node_cbk):
+    def extend_f(l1):
+        def f(l2):
+            l1.extend(l2)
+        return f
+    def visit_lrn_p_r_f(parent_op) :
+        def visit_lrn_p_r(exp):
+            """ exp must be a list of list
+                Visit the tree depth first, post-order (LRN)
+                parent_op is None at root of tree
+                Results are expanded into the parent's argument list
+                so the parent operator may see its number of arguments
+                change.
+            """
+            #print("visit_lrn_p_r in", exp)
+            if not islist(exp):
+                ## reached a leaf of tree
+                exp_out = [exp]
+            else:
+                op, arg = lisp(exp)
+                arg_int = list()
+                ## TODO: maybe there is a more elegant way of "expanding" lists into result arg_int
+                list(map(extend_f(arg_int), (list(map(visit_lrn_p_r_f(op), arg)))))
+                if parent_op != None:
+                    exp_out = node_cbk(parent_op, op, arg_int)
+                else:
+                    ## Root node, do not call node callback
+                    exp_out = [op.func(*arg_int)]
+            #print("visit_lrn_p_r out", exp_out)
+            return exp_out
+        return visit_lrn_p_r
+    return visit_lrn_p_r_f
+
+def visit_lrn_p(exp, node_cbk):
     """ exp must be a list of list
         Visit the tree depth first, post-order (LRN), passing parent
+        op to node callback
+        The parent node may see its number of arguments change
+        list.
     """
-    op, arg = lisp(exp)
-    arg_out = list()
-    for a in arg:
-        if islist(a):
-            arg_out.extend(visit_lrn_p(a, op.func, op_func))
-        else:
-            arg_out.append(a)
-    if op.func == op_func and op.func == op_parent:
-        assert_arity(op, arg_out)
-        return arg_out
-    else:
-        return [list(chain([op], arg_out))]
+    return visit_lrn_p_f(node_cbk)(None)(exp)[0]
 
 def visit_nlr(exp, op_func, node_cbk):
     """ exp must be a list of list
@@ -307,11 +343,11 @@ def visit_nlr(exp, op_func, node_cbk):
 
 def convert_eq(exp):
     """ exp must be a list of list """
-    return visit_lrn(exp, EQ, convert_eq_node)
+    return visit_lrn(exp, convert_eq_node)
 
 def convert_imp(exp):
     """ exp must be a list of list """
-    return visit_lrn(exp, IMP, convert_imp_node)
+    return visit_lrn(exp, convert_imp_node)
 
 def convert_not(exp):
     """ exp must be a list """
@@ -377,13 +413,11 @@ def distribute_or(exp):
                 exp[i+1] = distribute_or(e)
         return exp
 
-def associate_or(exp):
-    """ exp must be a list of list """
-    return visit_lrn_p(exp, None, OR)[0]
-
-def associate_and(exp):
-    """ exp must be a list of list """
-    return visit_lrn_p(exp, None, AND)[0]
+def associate(exp):
+    """ exp must be a list of list
+        Associate OR and AND in a single tree visit
+    """
+    return visit_lrn_p(exp, associate_cbk_f([OR, AND]))
 
 def is_cnf(exp):
     if not islist(exp):
