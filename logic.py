@@ -244,21 +244,37 @@ def convert_eq_node(arg):
     b = arg[1]
     return AND(IMP(a, b), IMP(copy(b), copy(a)))
 
+def convert_imp_node(arg):
+    a = arg[0]
+    b = arg[1]
+    return OR(NOT(a), b)
+
+def visit_lrn_f(op_func, node_cbk):
+    def visit_lrn_r(exp):
+        """ exp must be a list of list
+            Visit the tree depth first, post-order (LRN)
+        """
+        if not islist(exp):
+            return exp
+        op, arg = lisp(exp)
+        arg_out = list(map(visit_lrn_r, arg))
+        if op.func == op_func:
+            assert_arity(op, arg_out)
+            return node_cbk(arg_out)
+        else:
+            return list(chain([op], arg_out))
+    return visit_lrn_r
+
 def visit_lrn(exp, op_func, node_cbk):
     """ exp must be a list of list
         Visit the tree depth first, post-order (LRN)
+        The node_cbk function takes a list of arguments as argument
+        and returns a complete expression, so the parent node of a
+        transformed node does not see its number of arguments changing
     """
-    op, arg = lisp(exp)
-    for i, a in enumerate(arg):
-        if islist(a):
-            arg[i] = visit_lrn(a, op_func, node_cbk)
-    if op.func == op_func:
-        assert_arity(op, arg)
-        return node_cbk(arg)
-    else:
-        return list(chain([op], arg))
+    return visit_lrn_f(op_func, node_cbk)(exp)
 
-def visit_lrnp(exp, op_parent, op_func):
+def visit_lrn_p(exp, op_parent, op_func):
     """ exp must be a list of list
         Visit the tree depth first, post-order (LRN), passing parent
     """
@@ -266,7 +282,7 @@ def visit_lrnp(exp, op_parent, op_func):
     arg_out = list()
     for a in arg:
         if islist(a):
-            arg_out.extend(visit_lrnp(a, op.func, op_func))
+            arg_out.extend(visit_lrn_p(a, op.func, op_func))
         else:
             arg_out.append(a)
     if op.func == op_func and op.func == op_parent:
@@ -293,11 +309,6 @@ def convert_eq(exp):
     """ exp must be a list of list """
     return visit_lrn(exp, EQ, convert_eq_node)
 
-def convert_imp_node(arg):
-    a = arg[0]
-    b = arg[1]
-    return OR(NOT(a), b)
-
 def convert_imp(exp):
     """ exp must be a list of list """
     return visit_lrn(exp, IMP, convert_imp_node)
@@ -306,7 +317,7 @@ def convert_not(exp):
     """ exp must be a list """
     op, arg = lisp(exp)
     if op.func == NOT:
-        #assert(len(arg) == 1)
+        assert(len(arg) == 1)
         if islist(arg[0]):
             op2, arg2 = lisp(arg[0])
             if op2.func == NOT:
@@ -368,11 +379,11 @@ def distribute_or(exp):
 
 def associate_or(exp):
     """ exp must be a list of list """
-    return visit_lrnp(exp, None, OR)[0]
+    return visit_lrn_p(exp, None, OR)[0]
 
 def associate_and(exp):
     """ exp must be a list of list """
-    return visit_lrnp(exp, None, AND)[0]
+    return visit_lrn_p(exp, None, AND)[0]
 
 def is_cnf(exp):
     if not islist(exp):
