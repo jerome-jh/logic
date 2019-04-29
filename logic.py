@@ -12,35 +12,31 @@ def AND(*arg):
 
 def ANDl(a):
     """ a is an iterable """
-    a = list(a)
-    assert_arity(AND_op, a)
-    return list(chain([AND_op], a))
+    return Exp(AND_op, a)
 
 def OR(*arg):
     return ORl(arg)
 
 def ORl(a):
     """ a is an iterable """
-    a = list(a)
-    assert_arity(OR_op, a)
-    return list(chain([OR_op], a))
+    return Exp(OR_op, a)
 
 def IMP(a, b):
-    return [IMP_op, a, b]
+    return Exp(IMP_op, (a, b))
 
 def EQ(a, b):
-    return [EQ_op, a, b]
+    return Exp(EQ_op, (a, b))
 
 def NOT(a):
-    return [NOT_op, a]
+    return Exp(NOT_op, (a,))
 
 def CNF(exp):
-    if not islist(exp):
+    if is_atom(exp):
         return exp
     exp = convert_eq(exp)
     exp = convert_imp(exp)
     exp = convert_not(exp)
-    if not islist(exp):
+    if is_atom(exp):
         return exp
     while not is_cnf(exp):
         #print('in:', code_str(exp))
@@ -87,51 +83,80 @@ class NOT_op(OP):
     wolf_symb = 'Not'
     func = NOT
 
+""" Data type for an expression
+    An expression is a double (operator, arguments)
+    Arguments is typically a list
+    The reason for this class is to make explicit the data structure underlying
+    an expression. But also, since list() and tuple() do not support views in
+    standard Python (contrary to Numpy), we cannot extract the arguments without
+    performing a copy should the operator and the arguments be put in the same
+    list or tuple.
+"""
+class Exp:
+    __type_of_arg = list
+    def __init__(self, op, arg):
+        """ Create a composed (molecular) expression made of an operator and its operands
+            arg is an iterable """
+        self.__e = (op, Exp.__type_of_arg(arg))
+        assert_arity(self.op(), self.arg())
+    def op(self):
+        """ Return the operator of the expression """
+        return self.__e[0]
+    def arg(self):
+        """ Return the arguments of the expression """
+        return self.__e[1]
+    def decomp(self):
+        return self.op(), self.arg()
+    def __str__(self):
+        return str(self.__type_of_arg(chain([self.op()], self.arg())))
+
+def is_exp(exp):
+    """ Return true if exp is an expression """
+    return isinstance(exp, Exp)
+
+def is_atom(exp):
+    """ An atom is anything that is not an expression """
+    return not is_exp(exp)
+
 def math_str(exp):
-    """ Print exp in usual mathematical notation """
-    if islist(exp):
-        op, arg = lisp(exp)
-        if op.arity == 2:
-            return '(' + math_str(arg[0]) + ' ' + op.symb + ' ' + math_str(arg[1]) + ')'
-        elif op.arity == 1:
-            return op.symb + math_str(arg[0])
-        elif op.arity == -2:
-            s = '(' + math_str(arg[0])
-            for e in arg[1:]:
-                s += ' ' + op.symb + ' ' + math_str(e)
-            s += ')'
-            return s
+    """ Print exp in usual mathematical notation
+        TODO: handle precedence
+    """
+    l = list()
+    def prefix_cbk(exp):
+        if is_atom(exp):
+            l.append(str(exp))
         else:
-            raise Exception('Unexpected arity')
-    else:
-        return str(exp)
+            l.append('(')
+    def infix_cbk(exp, pos):
+        l.append(exp.op().symb)
+    def postfix_cbk(exp):
+        l.append(')')
+    visit_dflr(exp, (prefix_cbk, infix_cbk, postfix_cbk))
+    return ''.join(l)
 
 def code_str(exp):
     """ Print exp as equivalent code using this module API """
-    if islist(exp):
-        op, arg = lisp(exp)
-        if op.arity == 2:
-            return op.func.__name__ + '(' + code_str(arg[0]) + ',' + code_str(arg[1]) + ')'
-        elif op.arity == 1:
-            return op.func.__name__ + '(' + code_str(arg[0]) + ')'
-        elif op.arity == -2:
-            s = op.func.__name__ + '(' + code_str(arg[0])
-            for e in arg[1:]:
-                s += ',' + code_str(e)
-            s += ')'
-            return s
+    l = list()
+    def prefix_cbk(exp):
+        if is_atom(exp):
+            l.append(str(exp))
         else:
-            raise Exception('Unexpected arity')
-    else:
-        return str(exp)
+            l.append(exp.op().func.__name__ + '(')
+    def infix_cbk(exp, pos):
+        l.append(',')
+    def postfix_cbk(exp):
+        l.append(')')
+    visit_dflr(exp, (prefix_cbk, infix_cbk, postfix_cbk))
+    return ''.join(l)
 
 def wolf_str(exp):
     """ Tentative output to the so called Wolfram "language"
         This is useful for checking validity of the output
         But the language itself is so picky and unpredictable that careful
         human inspection is required every time. """
-    if islist(exp):
-        op, arg = lisp(exp)
+    if is_exp(exp):
+        op, arg = exp.decomp()
         if op.arity == 2:
             return op.wolf_symb + '[' + wolf_str(arg[0]) + ',' + wolf_str(arg[1]) + ']'
         elif op.arity == 1:
@@ -151,27 +176,22 @@ def wolf_str(exp):
             return chr(ord('a') + exp - 1)
             #return 'Symbol["x%d"]'%(exp)
 
-def __count_variable(exp):
+def count_variable_r(exp):
     s = set()
-    if islist(exp):
-        for i in range(1,len(exp)):
-            if islist(exp[i]):
-                s.update(__count_variable(exp[i]))
+    if is_exp(exp):
+        arg = exp.arg()
+        for a in arg:
+            if is_exp(a):
+                s.update(count_variable_r(a))
             else:
-                if exp[i] < 0:
-                    s.add(-exp[i])
-                else:
-                    s.add(exp[i])
+                s.add(abs(a))
     else:
-        ## Can only occur at root of the tree
-        if exp < 0:
-            s.add(-exp)
-        else:
-            s.add(exp)
+        ## Can only occur at root of the 'tree'
+        s.add(abs(exp))
     return s
 
 def count_variable(exp):
-    s = __count_variable(exp)
+    s = count_variable_r(exp)
     return len(s)
 
 def dimacs_str(exp):
@@ -179,13 +199,13 @@ def dimacs_str(exp):
         Exception('Expression is not CNF, cannot convert to DIMACS')
     ## Count number of variables
     nv = count_variable(exp)
-    if islist(exp):
-        car, cdr = lisp(exp)
+    if is_exp(exp):
+        car, cdr = exp.decomp()
         if car.func == AND:
             nc = len(cdr)
             s = 'p cnf %d %d\n'%(nv,nc)
             for e in cdr:
-                car, cdr2 = lisp(e)
+                car, cdr2 = e.decomp()
                 for e2 in cdr2:
                     s += '%s '%e2
                 s+= '0\n'
@@ -206,11 +226,11 @@ def to_sat(exp):
     """ Return a list of list, suitable for e.g. Pycosat input """
     if not is_cnf(exp):
         Exception('Expression is not CNF, cannot convert to sat')
-    if islist(exp):
-        car, cdr = lisp(exp)
+    if is_exp(exp):
+        car, cdr = exp.decomp()
         if car.func == AND:
             for i, e in enumerate(cdr):
-                if islist(e):
+                if is_exp(e):
                     cdr[i] = e[1:]
                 else:
                     cdr[i] = [e]
@@ -221,15 +241,6 @@ def to_sat(exp):
     else:
         ## Can only occur at root of the tree
         return [[exp]]
-
-def islist(exp):
-    ## Numpy integers have __getitem__, so better check on __iter__
-    return '__iter__' in dir(exp) and issubclass(exp[0], OP)
-
-def lisp(exp):
-    """ This is suboptimal because Python does not support views on lists,
-        so taking a slice actually creates a copy """
-    return exp[0], exp[1:]
 
 def assert_arity(op, arg):
     if op.arity < 0:
@@ -256,10 +267,10 @@ def visit_lrn_f(node_cbk):
         """ exp must be a list of list
             Visit the tree depth first, post-order (LRN)
         """
-        if not islist(exp):
+        if is_atom(exp):
             ## reached a leaf of tree
             return exp
-        op, arg = lisp(exp)
+        op, arg = exp.decomp()
         arg_int = list(map(visit_lrn_r, arg))
         op_out, arg_out = node_cbk(op, arg_int)
         ## TODO: op_out.func does a number of checks we may want to avoid
@@ -300,11 +311,11 @@ def visit_lrn_p_f(node_cbk):
                 change.
             """
             #print("visit_lrn_p_r in", exp)
-            if not islist(exp):
+            if is_atom(exp):
                 ## reached a leaf of tree
                 exp_out = [exp]
             else:
-                op, arg = lisp(exp)
+                op, arg = exp.decomp()
                 arg_int = list()
                 ## TODO: maybe there is a more elegant way of "expanding" lists into result arg_int
                 list(map(extend_f(arg_int), (list(map(visit_lrn_p_r_f(op), arg)))))
@@ -327,19 +338,44 @@ def visit_lrn_p(exp, node_cbk):
     """
     return visit_lrn_p_f(node_cbk)(None)(exp)[0]
 
-def visit_nlr(exp, op_func, node_cbk):
-    """ exp must be a list of list
-        Visit the tree depth first, pre-order (NLR)
+def visit_dflr(exp, cbk):
+    """ exp is an expression
+        Visit the tree depth first, then left to right
+        This is what is also called a left hand side visit
+        A callback is called for nodes pre, in and post order
+        For leaves only the pre callback is called
     """
-    op, arg = lisp(exp)
-    if op.func == op_func:
-        assert_arity(op, arg)
-        exp = node_cbk(arg)
-    op, arg = lisp(exp)
-    for i, a in enumerate(arg):
-        if islist(a):
-            arg[i] = visit_nlr(a, op_func, node_cbk)
-    return list(chain([op], arg))
+    def visit_dflr_r_f(cbk):
+        pre_cbk, in_cbk, post_cbk = cbk[0], cbk[1], cbk[2]
+        def visit_dflr_r(exp):
+            pre_cbk(exp)
+            if is_atom(exp):
+                return
+            op, arg = exp.decomp()
+            visit_dflr_r(arg[0])
+            for i in range(1, len(arg)):
+                in_cbk(exp, i)
+                visit_dflr_r(arg[i])
+            post_cbk(exp)
+        return visit_dflr_r
+    visit_dflr_r_f(cbk)(exp)
+
+def print_cbk_f(l):
+    def prefix_cbk(exp):
+        if is_atom(exp):
+            l.append(str(exp))
+        else:
+            l.append(exp.op().func.__name__ + '(')
+    def infix_cbk(exp, pos):
+        l.append(',')
+    def postfix_cbk(exp):
+        l.append(')')
+    return prefix_cbk, infix_cbk, postfix_cbk
+
+def print_test(exp):
+    l = list()
+    visit_dflr(exp, print_cbk_f(l))
+    return ''.join(l)
 
 def convert_eq(exp):
     """ exp must be a list of list """
@@ -350,12 +386,14 @@ def convert_imp(exp):
     return visit_lrn(exp, convert_imp_node)
 
 def convert_not(exp):
-    """ exp must be a list """
-    op, arg = lisp(exp)
+    """ exp must be an Exp or an atom """
+    if is_atom(exp):
+        return exp
+    op, arg = exp.decomp()
     if op.func == NOT:
         assert(len(arg) == 1)
-        if islist(arg[0]):
-            op2, arg2 = lisp(arg[0])
+        if is_exp(arg[0]):
+            op2, arg2 = arg[0].decomp()
             if op2.func == NOT:
                 ## Simplify NOT NOT
                 return arg2[0]
@@ -369,18 +407,17 @@ def convert_not(exp):
             ## Evaluate NOT
             return -arg[0]
     else:
-        for i, a in enumerate(arg):
-            if islist(a):
-                exp[i+1] = convert_not(a)
-        return exp
+        return Exp(op, map(convert_not, arg))
 
 def distribute_or(exp):
     """ exp must be a list """
-    op, arg = lisp(exp)
+    if is_atom(exp):
+        return exp
+    op, arg = exp.decomp()
     if op.func == OR:
         for i, e in enumerate(arg):
-            if islist(e):
-                op, arg2 = lisp(e)
+            if is_exp(e):
+                op, arg2 = e.decomp()
                 if op.func == AND:
                     if i == 0:
                         ## distribute to the left
@@ -408,10 +445,7 @@ def distribute_or(exp):
                             return distribute_or(reto)
         return exp
     else:
-        for i, e in enumerate(arg):
-            if islist(e):
-                exp[i+1] = distribute_or(e)
-        return exp
+        return Exp(op, map(distribute_or, arg))
 
 def associate(exp):
     """ exp must be a list of list
@@ -420,24 +454,42 @@ def associate(exp):
     return visit_lrn_p(exp, associate_cbk_f([OR, AND]))
 
 def is_cnf(exp):
-    if not islist(exp):
+    if is_atom(exp):
         return True
-    car, cdr = lisp(exp)
+    car, cdr = exp.decomp()
     if car.func == AND:
         for e in cdr:
-            if islist(e):
-                car, cdr2 = lisp(e)
+            if is_exp(e):
+                car, cdr2 = e.decomp()
                 if car.func != OR:
                     return False
                 for e2 in cdr2:
-                    if islist(e2):
+                    if is_exp(e2):
                         return False
         return True
     elif car.func == OR:
         for e in cdr:
-            if islist(e):
+            if is_exp(e):
                 return False
         return True
     else:
         return False
+
+if __name__ == '__main__':
+    e = AND(1,OR(2,3))
+    print(code_str(Exp(*e.decomp())))
+    print(math_str(e))
+    print(print_test(e))
+
+    e = AND(1,OR(2,3))
+    print(e)
+    print(code_str(e))
+    print(CNF(e))
+    print(code_str(CNF(e)))
+
+    e = OR(1,AND(2,3))
+    print(e)
+    print(code_str(e))
+    print(CNF(e))
+    print(code_str(CNF(e)))
 
