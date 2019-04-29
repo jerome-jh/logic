@@ -54,16 +54,12 @@ class AND_op(OP):
     symb = '/\\'
     wolf_symb = 'And'
     func = AND
-    def assoc(e, *arg):
-        e.extend(arg)
 
 class OR_op(OP):
     arity = -2
     symb = '\\/'
     wolf_symb = 'Or'
     func = OR
-    def assoc(self, *args):
-        self.arg.extend(args)
 
 class IMP_op(OP):
     arity = 2
@@ -109,6 +105,8 @@ class Exp:
         return self.op(), self.arg()
     def __str__(self):
         return str(self.__type_of_arg(chain([self.op()], self.arg())))
+    def __equal__(self, b):
+        pass
 
 def is_exp(exp):
     """ Return true if exp is an expression """
@@ -408,6 +406,26 @@ def convert_not(exp):
             return -arg[0]
     else:
         return Exp(op, map(convert_not, arg))
+
+def distribute_or_cbk(parent_op, parent_arg, current_op, current_arg):
+    if parent_op.func == OR and current_op.func == AND:
+        ## Distribute to the right
+        arg_out = list()
+        for ca in current_arg:
+            ca.extend(parent_arg)
+            arg_out.append(ca)
+        return AND(list(map(OR, arg_out)))
+    elif parent_op.func == AND and current_op.func == OR:
+        ## Distribute to the left
+        arg_out = list()
+        ## TODO: check if not equivalent to above loop
+        for pa in parent_arg:
+            pa.extend(current_arg)
+            arg_out.append(ca)
+        return AND(list(map(OR, arg_out)))
+
+def distribute_or_new(exp):
+    return visit_lrn_pa(exp, distribute_or_cbk)
 
 def distribute_or(exp):
     """ exp must be a list """
