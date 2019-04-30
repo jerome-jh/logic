@@ -54,30 +54,40 @@ class AND_op(OP):
     symb = '/\\'
     wolf_symb = 'And'
     func = AND
+    prec = 0
+    position = 'in'
 
 class OR_op(OP):
     arity = -2
     symb = '\\/'
     wolf_symb = 'Or'
     func = OR
+    prec = 1
+    position = 'in'
 
 class IMP_op(OP):
     arity = 2
     symb = '->'
     wolf_symb = 'Implies'
     func = IMP
+    prec = 2
+    position = 'in'
 
 class EQ_op(OP):
     arity = 2
     symb = '='
     wolf_symb = 'Equivalent'
     func = EQ
+    prec = 3
+    position = 'in'
 
 class NOT_op(OP):
     arity = 1
     symb = '-'
     wolf_symb = 'Not'
     func = NOT
+    prec = -1
+    position = 'pre'
 
 """ Data type for an expression
     An expression is a double (operator, arguments)
@@ -116,21 +126,74 @@ def is_atom(exp):
     """ An atom is anything that is not an expression """
     return not is_exp(exp)
 
+def tail_cbk_f(tail):
+    """ Return a set of callbacks that build the path leading to node
+        tail is an empty list """
+    def prefix_cbk(exp):
+        if is_atom(exp):
+            pass
+        else:
+            tail.append(exp)
+    def infix_cbk(exp, pos):
+        pass
+    def postfix_cbk(exp):
+        tail.pop()
+    return (prefix_cbk, infix_cbk, postfix_cbk)
+
+def seq_f(functions):
+    """ Call a number of functions in sequence """
+    def seq(*arg):
+        for f in functions:
+            f(*arg)
+    return seq
+
+def seq_cbk(set1, set2):
+    """ Combine two sets of callbacks, calling them in sequence """
+    return tuple(map(seq_f, zip(set1, set2)))
+
+def tail_test(exp):
+    tail = list()
+    def prefix_cbk(exp):
+        pass
+    def infix_cbk(exp, pos):
+        print(pos)
+        print(list(map(Exp.op, tail)))
+    def postfix_cbk(exp):
+        pass
+    print(seq_cbk(tail_cbk_f(tail), (prefix_cbk, infix_cbk, postfix_cbk)))
+    visit_dflr(exp, seq_cbk(tail_cbk_f(tail), (prefix_cbk, infix_cbk, postfix_cbk)))
+
 def math_str(exp):
     """ Print exp in usual mathematical notation
         TODO: handle precedence
     """
+    tail = list()
+    tail_cbk = tail_cbk_f(tail)
     l = list()
     def prefix_cbk(exp):
         if is_atom(exp):
             l.append(str(exp))
         else:
-            l.append('(')
+            if exp.op().position == 'pre':
+                l.append(exp.op().symb)
+            if len(tail) > 1:
+                parent_op = tail[-2].op()
+                if exp.op().prec >= parent_op.prec:
+                    ## Current op has less precedence than parent, need for parentheses
+                    l.append('(')
+            ## else: root node, no need for parentheses
     def infix_cbk(exp, pos):
-        l.append(exp.op().symb)
+        if exp.op().position == 'in':
+            l.append(exp.op().symb)
     def postfix_cbk(exp):
-        l.append(')')
-    visit_dflr(exp, (prefix_cbk, infix_cbk, postfix_cbk))
+        if exp.op().position == 'post':
+            l.append(exp.op().symb)
+        if len(tail) > 1:
+            parent_op = tail[-2].op()
+            if exp.op().prec >= parent_op.prec:
+                l.append(')')
+        ## else: root node, no need for parentheses
+    visit_dflr(exp, (seq_f((tail_cbk[0], prefix_cbk)), infix_cbk, seq_f((postfix_cbk, tail_cbk[2]))))
     return ''.join(l)
 
 def code_str(exp):
@@ -495,9 +558,26 @@ def is_cnf(exp):
 
 if __name__ == '__main__':
     e = AND(1,OR(2,3))
+    print(code_str(e))
+    print(math_str(e))
+    e = OR(1,AND(2,3))
+    print(code_str(e))
+    print(math_str(e))
+    e = NOT(AND(2,3))
+    print(code_str(e))
+    print(math_str(e))
+    e = AND(NOT(1),2)
+    print(code_str(e))
+    print(math_str(e))
+
+    e = AND(1,OR(AND(2,3),4))
+    #tail_test(e)
+    #quit()
+
     print(code_str(Exp(*e.decomp())))
     print(math_str(e))
     print(print_test(e))
+    quit()
 
     e = AND(1,OR(2,3))
     print(e)
