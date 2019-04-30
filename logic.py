@@ -128,17 +128,18 @@ def is_atom(exp):
 
 def tail_cbk_f(tail):
     """ Return a set of callbacks that build the path leading to node
-        tail is an empty list """
+        tail is an empty list
+        Please not this is not purely functional since tail is modified "in place"
+        """
     def prefix_cbk(exp):
-        if is_atom(exp):
-            pass
-        else:
-            tail.append(exp)
+        tail.append(exp)
     def infix_cbk(exp, pos):
         pass
     def postfix_cbk(exp):
         tail.pop()
-    return (prefix_cbk, infix_cbk, postfix_cbk)
+    def atom_cbk(a):
+        pass
+    return (prefix_cbk, infix_cbk, postfix_cbk, atom_cbk)
 
 def seq_f(functions):
     """ Call a number of functions in sequence """
@@ -151,64 +152,56 @@ def seq_cbk(set1, set2):
     """ Combine two sets of callbacks, calling them in sequence """
     return tuple(map(seq_f, zip(set1, set2)))
 
-def tail_test(exp):
-    tail = list()
-    def prefix_cbk(exp):
-        pass
-    def infix_cbk(exp, pos):
-        print(pos)
-        print(list(map(Exp.op, tail)))
-    def postfix_cbk(exp):
-        pass
-    print(seq_cbk(tail_cbk_f(tail), (prefix_cbk, infix_cbk, postfix_cbk)))
-    visit_dflr(exp, seq_cbk(tail_cbk_f(tail), (prefix_cbk, infix_cbk, postfix_cbk)))
+def make_tail_cbk_f(cbk, tail):
+    """ Combine the given callback with the tail callbacks
+        tail is an empty list """
+    tail_cbk = tail_cbk_f(tail)
+    return (seq_f((cbk[0], tail_cbk[0])), cbk[1], seq_f((tail_cbk[2], cbk[2])), cbk[3])
 
 def math_str(exp):
-    """ Print exp in usual mathematical notation
-        TODO: handle precedence
-    """
+    """ Print exp in usual mathematical notation """
     tail = list()
-    tail_cbk = tail_cbk_f(tail)
     l = list()
     def prefix_cbk(exp):
-        if is_atom(exp):
-            l.append(str(exp))
-        else:
-            if exp.op().position == 'pre':
-                l.append(exp.op().symb)
-            if len(tail) > 1:
-                parent_op = tail[-2].op()
-                if exp.op().prec >= parent_op.prec:
-                    ## Current op has less precedence than parent, need for parentheses
-                    l.append('(')
-            ## else: root node, no need for parentheses
+        op = exp.op()
+        if op.position == 'pre':
+            l.append(op.symb)
+        if len(tail) > 0:
+            parent_op = tail[-1].op()
+            if op.prec >= parent_op.prec:
+                ## Current op has less precedence than parent, need for parentheses
+                l.append('(')
+        ## else: root node, no need for parentheses
     def infix_cbk(exp, pos):
-        if exp.op().position == 'in':
-            l.append(exp.op().symb)
+        op = exp.op()
+        if op.position == 'in':
+            l.append(op.symb)
     def postfix_cbk(exp):
-        if exp.op().position == 'post':
-            l.append(exp.op().symb)
-        if len(tail) > 1:
-            parent_op = tail[-2].op()
-            if exp.op().prec >= parent_op.prec:
+        op = exp.op()
+        if op.position == 'post':
+            l.append(op.symb)
+        if len(tail) > 0:
+            parent_op = tail[-1].op()
+            if op.prec >= parent_op.prec:
                 l.append(')')
         ## else: root node, no need for parentheses
-    visit_dflr(exp, (seq_f((tail_cbk[0], prefix_cbk)), infix_cbk, seq_f((postfix_cbk, tail_cbk[2]))))
+    def atom_cbk(a):
+        l.append(str(a))
+    visit_dflr(exp, make_tail_cbk_f((prefix_cbk, infix_cbk, postfix_cbk, atom_cbk), tail))
     return ''.join(l)
 
 def code_str(exp):
     """ Print exp as equivalent code using this module API """
     l = list()
     def prefix_cbk(exp):
-        if is_atom(exp):
-            l.append(str(exp))
-        else:
-            l.append(exp.op().func.__name__ + '(')
+        l.append(exp.op().func.__name__ + '(')
     def infix_cbk(exp, pos):
         l.append(',')
     def postfix_cbk(exp):
         l.append(')')
-    visit_dflr(exp, (prefix_cbk, infix_cbk, postfix_cbk))
+    def atom_cbk(a):
+        l.append(str(a))
+    visit_dflr(exp, (prefix_cbk, infix_cbk, postfix_cbk, atom_cbk))
     return ''.join(l)
 
 def wolf_str(exp):
@@ -325,7 +318,7 @@ def convert_imp_node(op, arg):
 
 def visit_lrn_f(node_cbk):
     def visit_lrn_r(exp):
-        """ exp must be a list of list
+        """ exp must be an Exp or an atom
             Visit the tree depth first, post-order (LRN)
         """
         if is_atom(exp):
@@ -339,7 +332,7 @@ def visit_lrn_f(node_cbk):
     return visit_lrn_r
 
 def visit_lrn(exp, node_cbk):
-    """ exp must be a list of list
+    """ exp must be an Exp or an atom
         Visit the tree depth first, post-order (LRN)
         The node_cbk function takes a list of arguments as argument
         and returns a complete expression, so the parent node of a
@@ -391,7 +384,7 @@ def visit_lrn_p_f(node_cbk):
     return visit_lrn_p_r_f
 
 def visit_lrn_p(exp, node_cbk):
-    """ exp must be a list of list
+    """ exp must be an Exp or an atom
         Visit the tree depth first, post-order (LRN), passing parent
         op to node callback
         The parent node may see its number of arguments change
@@ -400,43 +393,29 @@ def visit_lrn_p(exp, node_cbk):
     return visit_lrn_p_f(node_cbk)(None)(exp)[0]
 
 def visit_dflr(exp, cbk):
-    """ exp is an expression
+    """ exp is an Exp or an atom
         Visit the tree depth first, then left to right
         This is what is also called a left hand side visit
         A callback is called for nodes pre, in and post order
-        For leaves only the pre callback is called
+        For leaves yet another callback is called
+        Nodes are of type Exp
+        Leaves are atoms
     """
     def visit_dflr_r_f(cbk):
-        pre_cbk, in_cbk, post_cbk = cbk[0], cbk[1], cbk[2]
+        pre_cbk, in_cbk, post_cbk, atom_cbk = cbk[0], cbk[1], cbk[2], cbk[3]
         def visit_dflr_r(exp):
-            pre_cbk(exp)
             if is_atom(exp):
-                return
-            op, arg = exp.decomp()
-            visit_dflr_r(arg[0])
-            for i in range(1, len(arg)):
-                in_cbk(exp, i)
-                visit_dflr_r(arg[i])
-            post_cbk(exp)
+                atom_cbk(exp)
+            else:
+                pre_cbk(exp)
+                op, arg = exp.decomp()
+                visit_dflr_r(arg[0])
+                for i in range(1, len(arg)):
+                    in_cbk(exp, i)
+                    visit_dflr_r(arg[i])
+                post_cbk(exp)
         return visit_dflr_r
     visit_dflr_r_f(cbk)(exp)
-
-def print_cbk_f(l):
-    def prefix_cbk(exp):
-        if is_atom(exp):
-            l.append(str(exp))
-        else:
-            l.append(exp.op().func.__name__ + '(')
-    def infix_cbk(exp, pos):
-        l.append(',')
-    def postfix_cbk(exp):
-        l.append(')')
-    return prefix_cbk, infix_cbk, postfix_cbk
-
-def print_test(exp):
-    l = list()
-    visit_dflr(exp, print_cbk_f(l))
-    return ''.join(l)
 
 def convert_eq(exp):
     """ exp must be a list of list """
@@ -569,14 +548,13 @@ if __name__ == '__main__':
     e = AND(NOT(1),2)
     print(code_str(e))
     print(math_str(e))
-
     e = AND(1,OR(AND(2,3),4))
-    #tail_test(e)
-    #quit()
+    print(code_str(e))
+    print(math_str(e))
+    quit()
 
     print(code_str(Exp(*e.decomp())))
     print(math_str(e))
-    print(print_test(e))
     quit()
 
     e = AND(1,OR(2,3))
